@@ -122,7 +122,7 @@ where
 mod tests {
     use super::*;
     use axum::{body::Body, response::IntoResponse, routing::get, Router};
-    use http::{Method, Request, StatusCode};
+    use http::{Request, StatusCode};
     use tower::ServiceExt;
 
     async fn ok_handler() -> impl IntoResponse {

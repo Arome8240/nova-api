@@ -55,7 +55,6 @@ async fn health_check() -> axum::Json<serde_json::Value> {
 
 /// Build the full router with all middleware applied.
 /// Called from `main.rs` with a live `AppState`.
-#[cfg(not(test))]
 pub fn build(state: crate::AppState) -> Router {
     use crate::middleware::{
         auth::AuthLayer,

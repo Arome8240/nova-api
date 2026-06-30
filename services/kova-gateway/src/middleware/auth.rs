@@ -272,16 +272,12 @@ mod tests {
     }
 
     fn make_valid_token(exp_delta_secs: i64) -> String {
-        let now = chrono::Utc::now().timestamp() as u64;
-        let exp = if exp_delta_secs >= 0 {
-            now + exp_delta_secs as u64
-        } else {
-            now.saturating_sub((-exp_delta_secs) as u64)
-        };
+        let now = chrono::Utc::now().timestamp();
+        let exp = (now + exp_delta_secs).max(0) as u64;
         let claims = KovaClaims {
             sub: uuid::Uuid::now_v7().to_string(),
             exp,
-            iat: now,
+            iat: now as u64,
             jti: uuid::Uuid::now_v7().to_string(),
             iss: "kova-auth".to_string(),
             kova_device_id: None,
@@ -303,7 +299,7 @@ mod tests {
 
     #[test]
     fn expired_token_returns_expired_error() {
-        let token = make_valid_token(-10); // expired 10 seconds ago
+        let token = make_valid_token(-120); // expired 2 minutes ago (> 60s leeway)
         let result = validate_token(&token, &make_keys());
         assert!(
             matches!(result, Err(AuthError::Expired)),
