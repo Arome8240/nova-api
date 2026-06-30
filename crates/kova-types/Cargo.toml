@@ -1,0 +1,19 @@
+[package]
+name = "kova-types"
+version = "0.1.0"
+edition = "2021"
+description = "Shared domain types, ID newtypes, Money, and error types for KOVA services"
+
+[dependencies]
+sqlx      = { workspace = true }
+uuid      = { workspace = true }
+rust_decimal = { workspace = true }
+serde     = { workspace = true }
+serde_json = { workspace = true }
+chrono    = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+rust_decimal_macros = "1"
+serde_json = { workspace = true }
