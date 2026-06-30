@@ -376,7 +376,7 @@
   - Unit tests verify round-trip serialization for each event type
 - **Crates/tools:** `serde`, `serde_json`, `chrono`, `rust_decimal`
 - **Notes:** Kafka messages use JSON serialization. Avro is not used. The `schema_version` field enables forward-compatible evolution — consumers must ignore unknown fields (`#[serde(deny_unknown_fields)]` must NOT be used on event structs).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -393,7 +393,7 @@
   - Re-exported from `kova-types` crate root
 - **Crates/tools:** `serde`, `serde_json`, `chrono`
 - **Notes:** `AccountStatusChangedEvent` is a catch-all for compliance logging — it must always be produced alongside the more specific events (e.g., when an account is frozen, both `AccountFrozenEvent` and `AccountStatusChangedEvent` are published to their respective topics).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -410,7 +410,7 @@
   - `decline_reason` on `CardDeclinedEvent` is a strongly typed enum, not a free string
 - **Crates/tools:** `serde`, `serde_json`, `chrono`
 - **Notes:** PCI-DSS requires that card numbers never appear in logs or message queues. The `vault_token` is the only card identifier permitted in events. Auditors will check this.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -426,7 +426,7 @@
   - Round-trip serialization tests pass
 - **Crates/tools:** `serde`, `serde_json`, `chrono`
 - **Notes:** kova-account subscribes to `kova.kyc.approved` to unblock accounts from `PendingKYC` status. This is the only mechanism for that status transition — the account service must not poll kova-kyc directly.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -442,7 +442,7 @@
   - Round-trip tests pass for all variants
 - **Crates/tools:** `serde`, `serde_json`, `chrono`
 - **Notes:** `risk_score` of 0 = definitely legitimate, 100 = definitely fraud. The threshold for `Block` vs `Review` is configurable at runtime in kova-fraud (see TASK-077), not hardcoded in the event schema.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -458,7 +458,7 @@
   - Round-trip serialization tests pass
 - **Crates/tools:** `serde`, `serde_json`, `chrono`, `rust_decimal`
 - **Notes:** kova-audit subscribes to all `kova.ledger.*` events for the immutable audit log. The ledger event must be published via the outbox pattern — never directly within the MySQL transaction that creates the ledger entry.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -474,7 +474,7 @@
   - Round-trip serialization tests pass
 - **Crates/tools:** `serde`, `serde_json`, `chrono`
 - **Notes:** kova-notifications is the sole consumer. Other services produce to `kova.notification.push.requested` rather than sending pushes directly. This centralises device token management and notification preferences.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
