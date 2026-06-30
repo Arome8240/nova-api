@@ -1,0 +1,162 @@
+syntax = "proto3";
+
+package kova.payments;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.payments";
+
+// KovaPayments — payment lookup RPCs for internal callers.
+//
+// Called by kova-account (closure pre-check), kova-fraud (StructuringRule
+// AML analysis), and kova-reconciliation (bank statement matching). All
+// write operations on payments go through the kova-payments REST API or
+// internal state machine — not through this service. Callers must present a
+// valid KOVA-internal JWT in the Authorization metadata header.
+service KovaPayments {
+  // GetPendingPayments returns the count and summary of payments in a
+  // non-terminal state for a given account. Used by kova-account to block
+  // account closure when in-flight payments exist.
+  //
+  // Error codes:
+  //   OK (0)                  Count returned (zero if none pending).
+  //   NOT_FOUND (5)           account_id does not exist in kova_payments_db.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetPendingPayments(GetPendingPaymentsRequest) returns (GetPendingPaymentsResponse);
+
+  // GetRecentPayments returns a user's recent payments within a time window.
+  // Used exclusively by kova-fraud's StructuringRule to detect sub-threshold
+  // AML structuring patterns. Limited to the last 24 hours.
+  //
+  // Error codes:
+  //   OK (0)                  Payments returned (empty slice if none).
+  //   INVALID_ARGUMENT (3)    limit > 50 or since is more than 24 hours ago.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   PERMISSION_DENIED (7)   Caller does not have scope "payments:read_internal".
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetRecentPayments(GetRecentPaymentsRequest) returns (GetRecentPaymentsResponse);
+
+  // GetPaymentByRailRef looks up a payment by its rail reference number.
+  // Used by kova-reconciliation to match bank statement entries to KOVA
+  // payment records.
+  //
+  // Error codes:
+  //   OK (0)                  Payment found.
+  //   NOT_FOUND (5)           No payment with the given rail_reference exists.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   PERMISSION_DENIED (7)   Caller does not have scope "payments:read_internal".
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetPaymentByRailRef(GetPaymentByRailRefRequest) returns (GetPaymentByRailRefResponse);
+}
+
+// ── GetPendingPayments ────────────────────────────────────────────────────────
+
+message GetPendingPaymentsRequest {
+  // UUID stored as 16 raw bytes (BINARY(16) in MySQL, UUIDv7 byte order).
+  bytes account_id = 1;
+}
+
+message GetPendingPaymentsResponse {
+  // Count of payments in non-terminal statuses:
+  // Initiated, Validating, FraudCheck, FxConversion, SettlementSubmitted.
+  int32 pending_count = 1;
+
+  repeated PendingPaymentSummary payments = 2;
+}
+
+message PendingPaymentSummary {
+  // UUID stored as 16 raw bytes.
+  bytes payment_id = 1;
+
+  // Current payment status string.
+  string status = 2;
+
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string amount = 3;
+
+  // ISO 4217 currency code.
+  string currency = 4;
+
+  google.protobuf.Timestamp initiated_at = 5;
+}
+
+// ── GetRecentPayments ─────────────────────────────────────────────────────────
+
+message GetRecentPaymentsRequest {
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 1;
+
+  // Maximum number of payments to return. Must be 1–50.
+  uint32 limit = 2;
+
+  // Return payments initiated on or after this timestamp.
+  // Must not be more than 24 hours in the past (enforced by the server).
+  google.protobuf.Timestamp since = 3;
+}
+
+message GetRecentPaymentsResponse {
+  repeated RecentPaymentSummary payments = 1;
+}
+
+message RecentPaymentSummary {
+  // UUID stored as 16 raw bytes.
+  bytes payment_id = 1;
+
+  // UUID stored as 16 raw bytes.
+  bytes source_account_id = 2;
+
+  // UUID stored as 16 raw bytes.
+  bytes destination_account_id = 3;
+
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string amount = 4;
+
+  // ISO 4217 currency code.
+  string currency = 5;
+
+  // Terminal or non-terminal status string.
+  string status = 6;
+
+  google.protobuf.Timestamp initiated_at = 7;
+
+  // UTC settlement timestamp. Null if not yet settled.
+  google.protobuf.Timestamp settled_at = 8;
+}
+
+// ── GetPaymentByRailRef ───────────────────────────────────────────────────────
+
+message GetPaymentByRailRefRequest {
+  // Rail reference assigned by the payment rail (SEPA end-to-end ID,
+  // Faster Payments reference, etc.). Stored in kova_payments_db.payments.
+  string rail_reference = 1;
+}
+
+message GetPaymentByRailRefResponse {
+  // UUID stored as 16 raw bytes.
+  bytes payment_id = 1;
+
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 2;
+
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string amount = 3;
+
+  // ISO 4217 currency code.
+  string currency = 4;
+
+  // Current payment status string.
+  string status = 5;
+
+  // Payment rail. One of: "SEPA", "FASTER_PAYMENTS".
+  string rail = 6;
+
+  google.protobuf.Timestamp initiated_at = 7;
+
+  // Null if not yet settled.
+  google.protobuf.Timestamp settled_at = 8;
+}

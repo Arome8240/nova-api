@@ -1,0 +1,607 @@
+# KOVA — Kafka Topic Registry
+#
+# This file is the single source of truth for every Kafka topic in the KOVA
+# platform. All service implementations must reference topic name constants
+# derived from this file. Any addition, removal, or rename is a breaking change
+# and requires a corresponding update to this registry and to affected services.
+#
+# Key conventions:
+#   - All topic names are prefixed `kova.`
+#   - Partition counts are set per expected throughput tier (see below)
+#   - Replication factor is 3 in production, 1 in local dev
+#   - kova-audit subscribes to ALL topics via regex `kova\..*` — it is listed
+#     as a consumer on every topic for explicitness
+#   - Retention is 7d for operational topics, 30d for compliance-relevant topics,
+#     and unlimited for audit-critical topics
+
+meta:
+  schema_version: "1.0.0"
+  last_updated: "2026-06-29"
+  maintainer: "platform-engineering"
+
+# ---------------------------------------------------------------------------
+# Throughput tiers → partition counts
+#
+#   high    6 partitions  — ledger entries, card authorisations, payment events
+#   medium  3 partitions  — account lifecycle, KYC, fraud, notifications
+#   low     3 partitions  — reconciliation, FX (minimum for HA)
+# ---------------------------------------------------------------------------
+
+defaults:
+  production:
+    replication_factor: 3
+    min_insync_replicas: 2
+  local_dev:
+    replication_factor: 1
+    min_insync_replicas: 1
+
+# ===========================================================================
+# PAYMENT EVENTS
+# ===========================================================================
+
+topic_groups:
+  - group: payment_events
+    description: >
+      Tracks every state transition in the payment lifecycle. Produced by
+      kova-payments via the outbox pattern — never published directly inside
+      a MySQL transaction.
+    topics:
+
+      - name: kova.payment.initiated
+        partitions: 6
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published when a payment row is first inserted with status Initiated.
+          Downstream services must not act on this event to modify payment state —
+          only kova-payments owns the payment state machine.
+
+      - name: kova.payment.completed
+        partitions: 6
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-reconciliation
+            consumer_group: kova-reconciliation-consumer
+            purpose: Auto-match against unreconciled bank statement entries
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published when status transitions to Settled. kova-reconciliation uses
+          the rail_reference field to match against ingested bank statements.
+
+      - name: kova.payment.failed
+        partitions: 6
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published on terminal failure (exhausted retries or fraud block).
+          kova-payments also publishes a kova.notification.push.requested event
+          separately to notify the user.
+
+      - name: kova.payment.refunded
+        partitions: 6
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published when a refund payment settles. The payload includes both
+          the original payment_id and the refund payment_id.
+
+      - name: kova.payment.expired
+        partitions: 6
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published when a payment exceeds its processing TTL without reaching
+          a terminal state. The payments worker handles expiry detection.
+
+# ===========================================================================
+# ACCOUNT LIFECYCLE EVENTS
+# ===========================================================================
+
+  - group: account_lifecycle
+    description: >
+      Account creation and every status transition. Consumed by kova-account
+      itself for transitions triggered by external events (KYC approval,
+      fraud-initiated freeze) and by kova-audit for the audit trail.
+    topics:
+
+      - name: kova.account.created
+        partitions: 3
+        retention: unlimited
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published once per account on creation. Retained indefinitely because
+          it is the root event of the account's event history.
+
+      - name: kova.account.frozen
+        partitions: 3
+        retention: 30d
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published after kova-account processes a freeze request (REST or
+          admin tool). kova-fraud does not publish directly to this topic —
+          it returns a Block decision to kova-payments, which calls kova-account
+          via gRPC to initiate the freeze.
+
+      - name: kova.account.unfrozen
+        partitions: 3
+        retention: 30d
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+
+      - name: kova.account.closed
+        partitions: 3
+        retention: unlimited
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Retained indefinitely — account closure is a permanent regulatory event.
+
+      - name: kova.account.status_changed
+        partitions: 3
+        retention: 30d
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Catch-all compliance event published alongside every more-specific
+          account event (frozen, unfrozen, closed). Provides a single topic
+          for auditors who want a complete status history without subscribing
+          to multiple topics.
+
+      - name: kova.account.closure_requested
+        partitions: 3
+        retention: 7d
+        key: account_id
+        producer:
+          service: kova-account
+          mechanism: outbox
+        consumers:
+          - service: kova-payments
+            consumer_group: kova-payments-closure-consumer
+            purpose: >
+              Check for pending payments against this account and publish
+              kova.payment.closure_check_result in reply.
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Part of the account closure Kafka saga. Replaces the former
+          kova-account → kova-payments gRPC call (GetPendingPayments) to
+          break a circular synchronous dependency. kova-account transitions
+          to status "ClosurePending" before publishing; closure completes or
+          cancels based on the reply event.
+
+      - name: kova.payment.closure_check_result
+        partitions: 3
+        retention: 7d
+        key: account_id
+        producer:
+          service: kova-payments
+          mechanism: outbox
+        consumers:
+          - service: kova-account
+            consumer_group: kova-account-closure-consumer
+            purpose: >
+              Receive pending payment count; proceed with or cancel closure
+              accordingly.
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Reply leg of the account closure Kafka saga. Payload includes
+          account_id, pending_count, and can_close (bool). kova-account
+          completes closure if can_close is true, or publishes
+          kova.account.closure_cancelled if pending_count > 0.
+
+# ===========================================================================
+# CARD EVENTS
+# ===========================================================================
+
+  - group: card_events
+    description: >
+      Virtual card lifecycle and every authorisation decision. High-volume
+      authorisation events use 6 partitions to match payment throughput.
+    topics:
+
+      - name: kova.card.issued
+        partitions: 3
+        retention: unlimited
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Retained indefinitely — card issuance is a PCI-DSS auditable event.
+          Payload contains vault_token and last_four only — never a PAN.
+
+      - name: kova.card.frozen
+        partitions: 3
+        retention: 30d
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+
+      - name: kova.card.unfrozen
+        partitions: 3
+        retention: 30d
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+
+      - name: kova.card.cancelled
+        partitions: 3
+        retention: unlimited
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: Retained indefinitely — card cancellation is a PCI-DSS auditable event.
+
+      - name: kova.card.authorization
+        partitions: 6
+        retention: 30d
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          High-volume — 6 partitions to handle peak authorisation load.
+          Payload must never contain a PAN; vault_token is the only card
+          identifier permitted.
+
+      - name: kova.card.declined
+        partitions: 6
+        retention: 30d
+        key: card_id
+        producer:
+          service: kova-cards
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published for every declined authorisation including spend control
+          declines, frozen card attempts, and insufficient balance declines.
+          kova-cards separately publishes kova.notification.push.requested
+          for user-facing alerts.
+
+# ===========================================================================
+# KYC EVENTS
+# ===========================================================================
+
+  - group: kyc_events
+    description: >
+      KYC submission, review outcomes, expiry, and risk level assignment.
+      kova.kyc.approved is the trigger for kova-account to unblock accounts
+      from PendingKYC status — this is the only permitted mechanism for that
+      transition.
+    topics:
+
+      - name: kova.kyc.submitted
+        partitions: 3
+        retention: unlimited
+        key: user_id
+        producer:
+          service: kova-kyc
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: Retained indefinitely — KYC submission is a regulatory record.
+
+      - name: kova.kyc.approved
+        partitions: 3
+        retention: unlimited
+        key: user_id
+        producer:
+          service: kova-kyc
+          mechanism: outbox
+        consumers:
+          - service: kova-account
+            consumer_group: kova-account-kyc-consumer
+            purpose: Transition account status PendingKYC → Active
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Retained indefinitely — KYC approval is a permanent regulatory record.
+          kova-account's consumer must be idempotent: if the event is reprocessed,
+          a second PendingKYC → Active transition on an already-Active account
+          must be a no-op.
+
+      - name: kova.kyc.rejected
+        partitions: 3
+        retention: unlimited
+        key: user_id
+        producer:
+          service: kova-kyc
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: Retained indefinitely — KYC rejection is a regulatory record.
+
+      - name: kova.kyc.expired
+        partitions: 3
+        retention: 30d
+        key: user_id
+        producer:
+          service: kova-kyc
+          mechanism: outbox
+        consumers:
+          - service: kova-account
+            consumer_group: kova-account-kyc-consumer
+            purpose: Transition account status Active → PendingKYC
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published by the kova-kyc expiry cron job (daily at 08:00 UTC).
+          Consumer on kova-account must be idempotent.
+
+      - name: kova.kyc.risk_level_assigned
+        partitions: 3
+        retention: 30d
+        key: user_id
+        producer:
+          service: kova-kyc
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published alongside kova.kyc.approved when a risk level (Low / Medium
+          / High) is assigned. Separate topic allows kova-fraud to subscribe
+          without consuming all KYC events.
+
+# ===========================================================================
+# FRAUD EVENTS
+# ===========================================================================
+
+  - group: fraud_events
+    description: >
+      Every fraud rule evaluation result. Published asynchronously after the
+      synchronous gRPC response has already been returned to kova-payments,
+      so it does not block the payment state machine.
+    topics:
+
+      - name: kova.fraud.decision
+        partitions: 3
+        retention: 30d
+        key: payment_id
+        producer:
+          service: kova-fraud
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Decision payload includes risk_score (0–100), triggered_rules list,
+          and final decision (Allow / Review / Block). Review decisions should
+          trigger manual case creation in compliance tooling (out of scope for
+          the Kafka consumer — handled by the compliance tool polling the
+          kova-fraud REST API).
+
+# ===========================================================================
+# LEDGER EVENTS
+# ===========================================================================
+
+  - group: ledger_events
+    description: >
+      Every double-entry posting and end-of-day reconciliation result. High-
+      volume — every financial movement produces a ledger event, including
+      payment settlements, refunds, fee postings, and FX conversions.
+    topics:
+
+      - name: kova.ledger.entry.created
+        partitions: 6
+        retention: unlimited
+        key: entry_id
+        producer:
+          service: kova-ledger
+          mechanism: outbox
+        consumers:
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Retained indefinitely — ledger entries are permanent financial records.
+          Published via outbox in the same MySQL transaction as the
+          ledger_entries INSERT, ensuring at-least-once delivery.
+
+      - name: kova.ledger.reconciliation.completed
+        partitions: 3
+        retention: 30d
+        key: reconciliation_date
+        producer:
+          service: kova-ledger
+          mechanism: outbox
+        consumers:
+          - service: kova-reconciliation
+            consumer_group: kova-reconciliation-consumer
+            purpose: Trigger reconciliation report generation
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          Published once per day by the end-of-day reconciliation cron job.
+          Payload includes total_debits, total_credits, imbalance_amount
+          (should always be zero), and entry_count.
+
+# ===========================================================================
+# NOTIFICATION EVENTS
+# ===========================================================================
+
+  - group: notification_events
+    description: >
+      Notification dispatch requests from any KOVA service. kova-notifications
+      is the sole consumer — all other services must publish here rather than
+      calling FCM or APNs directly. This centralises device token management
+      and preference enforcement.
+    topics:
+
+      - name: kova.notification.push.requested
+        partitions: 3
+        retention: 3d
+        key: user_id
+        producers:
+          - service: kova-auth
+            mechanism: outbox
+            events: Security alerts (new device login, PIN change)
+          - service: kova-account
+            mechanism: outbox
+            events: Account frozen / closed alerts
+          - service: kova-payments
+            mechanism: outbox
+            events: Payment completed / failed / refunded outcomes
+          - service: kova-cards
+            mechanism: outbox
+            events: Card declined alerts
+          - service: kova-kyc
+            mechanism: outbox
+            events: KYC approved / rejected outcomes, expiry warnings
+        consumers:
+          - service: kova-notifications
+            consumer_group: kova-notifications-consumer
+            purpose: Dispatch FCM (Android) and APNs (iOS) push, store in DB, WebSocket broadcast
+          - service: kova-audit
+            consumer_group: kova-audit-consumer
+            purpose: Append to immutable audit log
+        notes: >
+          3-day retention is sufficient — notifications older than 3 days will
+          have already been delivered or marked as undeliverable. The persistent
+          notification history is in kova_notifications_db, not in Kafka.
+          idempotency_key in the payload prevents duplicate sends on consumer
+          reprocessing.
+
+# ===========================================================================
+# SUMMARY TABLE
+# ===========================================================================
+#
+# topic                                   | partitions | retention | producers          | consumers
+# ----------------------------------------|------------|-----------|--------------------|-----------
+# kova.payment.initiated                  | 6          | 30d       | kova-payments      | kova-audit
+# kova.payment.completed                  | 6          | 30d       | kova-payments      | kova-reconciliation, kova-audit
+# kova.payment.failed                     | 6          | 30d       | kova-payments      | kova-audit
+# kova.payment.refunded                   | 6          | 30d       | kova-payments      | kova-audit
+# kova.payment.expired                    | 6          | 30d       | kova-payments      | kova-audit
+# kova.account.created                    | 3          | unlimited | kova-account       | kova-audit
+# kova.account.frozen                     | 3          | 30d       | kova-account       | kova-audit
+# kova.account.unfrozen                   | 3          | 30d       | kova-account       | kova-audit
+# kova.account.closed                     | 3          | unlimited | kova-account       | kova-audit
+# kova.account.status_changed             | 3          | 30d       | kova-account       | kova-audit
+# kova.card.issued                        | 3          | unlimited | kova-cards         | kova-audit
+# kova.card.frozen                        | 3          | 30d       | kova-cards         | kova-audit
+# kova.card.unfrozen                      | 3          | 30d       | kova-cards         | kova-audit
+# kova.card.cancelled                     | 3          | unlimited | kova-cards         | kova-audit
+# kova.card.authorization                 | 6          | 30d       | kova-cards         | kova-audit
+# kova.card.declined                      | 6          | 30d       | kova-cards         | kova-audit
+# kova.kyc.submitted                      | 3          | unlimited | kova-kyc           | kova-audit
+# kova.kyc.approved                       | 3          | unlimited | kova-kyc           | kova-account, kova-audit
+# kova.kyc.rejected                       | 3          | unlimited | kova-kyc           | kova-audit
+# kova.kyc.expired                        | 3          | 30d       | kova-kyc           | kova-account, kova-audit
+# kova.kyc.risk_level_assigned            | 3          | 30d       | kova-kyc           | kova-audit
+# kova.fraud.decision                     | 3          | 30d       | kova-fraud         | kova-audit
+# kova.ledger.entry.created               | 6          | unlimited | kova-ledger        | kova-audit
+# kova.ledger.reconciliation.completed    | 3          | 30d       | kova-ledger        | kova-reconciliation, kova-audit
+# kova.notification.push.requested        | 3          | 3d        | kova-auth,         | kova-notifications, kova-audit
+#                                         |            |           | kova-account,      |
+#                                         |            |           | kova-payments,     |
+#                                         |            |           | kova-cards,        |
+#                                         |            |           | kova-kyc           |
+#
+# Total topics: 25
+# Total with 6 partitions (high-throughput): 7
+# Total with 3 partitions (medium/low-throughput): 18

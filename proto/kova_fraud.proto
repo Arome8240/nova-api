@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package kova.fraud;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.fraud";
+
+// KovaFraud — real-time fraud rule evaluation.
+//
+// Called synchronously by kova-payments during the FraudCheck stage of the
+// payment state machine. The entire evaluation (all 5 rules via tokio::join!)
+// must complete within 200ms. Callers must present a valid KOVA-internal JWT
+// in the Authorization metadata header.
+service KovaFraud {
+  // EvaluatePayment runs all fraud rules concurrently against the payment
+  // context and returns a risk score with a final Allow / Review / Block
+  // decision. The gRPC response is returned before the FraudDecisionEvent is
+  // published to Kafka — Kafka publishing is fire-and-forget via outbox.
+  //
+  // Error codes:
+  //   OK (0)                  Decision returned (all statuses including Block).
+  //   INVALID_ARGUMENT (3)    Malformed request (missing required fields).
+  //   DEADLINE_EXCEEDED (4)   Evaluation did not complete within 200ms SLA.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected rule engine error.
+  rpc EvaluatePayment(EvaluatePaymentRequest) returns (EvaluatePaymentResponse);
+}
+
+// ── EvaluatePayment ──────────────────────────────────────────────────────────
+
+message EvaluatePaymentRequest {
+  PaymentContext payment = 1;
+  UserContext    user    = 2;
+}
+
+message PaymentContext {
+  // UUID stored as 16 raw bytes (BINARY(16) in MySQL, UUIDv7 byte order).
+  bytes payment_id = 1;
+
+  // UUID stored as 16 raw bytes.
+  bytes source_account_id = 2;
+
+  // UUID stored as 16 raw bytes.
+  bytes destination_account_id = 3;
+
+  // Decimal string mapping to MySQL DECIMAL(19,4). Always positive.
+  // Never use double or float for this field.
+  string amount = 4;
+
+  // ISO 4217 currency code. One of: "NGN", "GBP", "USD", "KES".
+  string currency = 5;
+
+  // ISO 3166-1 alpha-2 country code of the merchant / recipient.
+  // Example: "NG", "GB", "US", "KE". Empty string if unknown.
+  string merchant_country = 6;
+
+  // Merchant name as provided by the originating request. May be empty.
+  string merchant_name = 7;
+
+  // ISO 18245 Merchant Category Code (4-digit string, e.g. "5411").
+  // Empty string if not applicable (e.g. P2P transfer).
+  string mcc = 8;
+
+  // Payment rail. One of: "SEPA", "FASTER_PAYMENTS", "INTERNAL".
+  string rail = 9;
+
+  google.protobuf.Timestamp initiated_at = 10;
+}
+
+message UserContext {
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 1;
+
+  // KYC risk level of this user. One of: "Low", "Medium", "High", "Unknown".
+  // Populated from kova-kyc via gRPC before calling EvaluatePayment.
+  string kyc_risk_level = 2;
+
+  // Device fingerprint string from the originating session.
+  // Used by GeographicAnomalyRule and velocity checks.
+  string device_fingerprint = 3;
+
+  // ISO 3166-1 alpha-2 home country derived from the user's phone prefix.
+  string home_country = 4;
+}
+
+message EvaluatePaymentResponse {
+  // Final decision. One of: "Allow", "Review", "Block".
+  // Block → kova-payments transitions payment to Failed.
+  // Review → payment proceeds but a compliance case is created.
+  // Allow → payment proceeds normally.
+  string decision = 1;
+
+  // Aggregate risk score 0–100.
+  // 0 = clearly legitimate, 100 = clearly fraudulent.
+  // Thresholds: Allow < 30, Review 30–69, Block >= 70.
+  uint32 risk_score = 2;
+
+  // Names of rules that contributed a non-zero score_delta.
+  repeated string triggered_rules = 3;
+
+  // Per-rule breakdown for audit and debugging.
+  repeated RuleResult rule_results = 4;
+
+  // UUID of the fraud decision record written to kova_fraud_db.
+  // Empty bytes if writing to DB failed (non-fatal — decision is still valid).
+  bytes fraud_decision_id = 5;
+}
+
+message RuleResult {
+  // Rule name (e.g. "VelocityRule", "LargeAmountRule").
+  string rule_name = 1;
+
+  bool triggered = 2;
+
+  // Score delta this rule contributed (0 if not triggered).
+  uint32 score_delta = 3;
+
+  // Human-readable reason (e.g. "6 payments in 45 seconds").
+  string reason = 4;
+
+  // True if the rule timed out during evaluation. A timed-out rule is
+  // treated as triggered (conservative fail-safe) with score_delta from config.
+  bool timed_out = 5;
+}

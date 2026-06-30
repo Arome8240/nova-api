@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package kova.auth;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.auth";
+
+// KovaAuth — internal token validation service.
+//
+// All KOVA services call ValidateInternalToken on inbound gRPC requests to
+// verify the caller holds a valid KOVA-internal JWT (RS256, issuer
+// "kova-internal", subject "svc:<service-name>", TTL 5 minutes).
+//
+// NOTE: Services MAY validate tokens locally using the cached RS256 public key
+// to avoid a network round-trip. This RPC exists for services that prefer
+// centralised validation or need scope introspection without parsing the JWT
+// themselves. Local validation is preferred for the hot path.
+service KovaAuth {
+  // ValidateInternalToken verifies a KOVA-internal JWT and returns the
+  // service identity and granted scopes.
+  //
+  // Error codes:
+  //   OK (0)                  Token is valid.
+  //   UNAUTHENTICATED (16)    Token is missing, malformed, or expired.
+  //   PERMISSION_DENIED (7)   Token is valid but caller lacks required scope.
+  //   INTERNAL (13)           Public key unavailable or unexpected error.
+  rpc ValidateInternalToken(ValidateInternalTokenRequest)
+      returns (ValidateInternalTokenResponse);
+}
+
+message ValidateInternalTokenRequest {
+  // Raw JWT string from the Authorization: Bearer <token> header.
+  string token = 1;
+
+  // Optional: assert the token has this scope. If provided and the token
+  // does not carry the scope, PERMISSION_DENIED is returned.
+  string required_scope = 2;
+}
+
+message ValidateInternalTokenResponse {
+  // Subject claim — format: "svc:<service-name>" (e.g. "svc:kova-payments").
+  string service_name = 1;
+
+  // All scopes granted to this token.
+  repeated string scopes = 2;
+
+  // Expiry of the validated token.
+  google.protobuf.Timestamp expires_at = 3;
+}

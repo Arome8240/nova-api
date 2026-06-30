@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package kova.kyc;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.kyc";
+
+// KovaKyc — KYC status and risk level queries.
+//
+// Called by kova-cards (gates card issuance on Approved KYC) and kova-fraud
+// (reads risk level for LargeAmountRule thresholds). Responses are cached
+// by callers in Redis to avoid repeated gRPC calls on the hot path. Callers
+// must present a valid KOVA-internal JWT in the Authorization metadata header.
+service KovaKyc {
+  // GetKycStatus returns the full KYC status for a user, including risk level
+  // and expiry. Used by kova-cards to gate card issuance.
+  //
+  // Error codes:
+  //   OK (0)                  Status returned.
+  //   NOT_FOUND (5)           No KYC application exists for this user_id.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetKycStatus(GetKycStatusRequest) returns (GetKycStatusResponse);
+
+  // GetKycRiskLevel returns only the risk level for a user. Lighter-weight
+  // than GetKycStatus — used by kova-fraud on every payment evaluation.
+  // Returns risk level "Unknown" (not NOT_FOUND) when no KYC record exists,
+  // to allow kova-fraud to apply conservative thresholds without failing.
+  //
+  // Error codes:
+  //   OK (0)                  Risk level returned (may be "Unknown").
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetKycRiskLevel(GetKycRiskLevelRequest) returns (GetKycRiskLevelResponse);
+}
+
+// ── GetKycStatus ──────────────────────────────────────────────────────────────
+
+message GetKycStatusRequest {
+  // UUID stored as 16 raw bytes (BINARY(16) in MySQL, UUIDv7 byte order).
+  bytes user_id = 1;
+}
+
+message GetKycStatusResponse {
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 1;
+
+  // UUID of the KYC application. Stored as 16 raw bytes.
+  bytes application_id = 2;
+
+  // One of: "Unverified", "Pending", "UnderReview", "Approved",
+  //         "Rejected", "Expired".
+  // Matches MySQL ENUM values in kova_kyc_db.kyc_applications.status exactly.
+  string status = 3;
+
+  // One of: "Low", "Medium", "High". Empty string if not yet assigned
+  // (status is not Approved).
+  string risk_level = 4;
+
+  // When the KYC approval expires. Null if status is not Approved.
+  google.protobuf.Timestamp expires_at = 5;
+
+  // When the most recent application was submitted.
+  google.protobuf.Timestamp submitted_at = 6;
+}
+
+// ── GetKycRiskLevel ───────────────────────────────────────────────────────────
+
+message GetKycRiskLevelRequest {
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 1;
+}
+
+message GetKycRiskLevelResponse {
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 1;
+
+  // One of: "Low", "Medium", "High", "Unknown".
+  // "Unknown" is returned when:
+  //   - No KYC application exists for this user, or
+  //   - Status is not Approved (e.g. Pending, Rejected, Expired).
+  // Callers (kova-fraud) must treat "Unknown" as "High" for threshold purposes.
+  string risk_level = 2;
+
+  // True if the KYC has expired (status == "Expired"). kova-fraud should
+  // apply High risk thresholds when kyc_expired is true.
+  bool kyc_expired = 3;
+}

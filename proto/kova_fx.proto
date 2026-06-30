@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package kova.fx;
+
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.fx";
+
+// KovaFx — FX rate quoting and quote consumption.
+//
+// Called by kova-payments for cross-currency payment processing. GetFxQuote
+// locks a rate in Redis for 30 seconds. ConsumeQuote atomically claims that
+// lock. Both RPCs must be called within the same payment state machine
+// transition. Callers must present a valid KOVA-internal JWT in the
+// Authorization metadata header.
+service KovaFx {
+  // GetFxQuote returns a 30-second locked FX quote for a currency conversion.
+  // The quote_token must be passed to ConsumeQuote to finalise the conversion.
+  // Unused quotes expire automatically (Redis TTL = 30 seconds).
+  //
+  // Error codes:
+  //   OK (0)                  Quote issued and locked.
+  //   INVALID_ARGUMENT (3)    Unsupported currency pair, or amount <= 0.
+  //   UNAVAILABLE (14)        FX rates have expired in Redis (poller is down).
+  //                           Caller should retry with backoff.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected error.
+  rpc GetFxQuote(GetFxQuoteRequest) returns (GetFxQuoteResponse);
+
+  // ConsumeQuote atomically claims a previously issued quote. Uses a Redis
+  // Lua script to ensure exactly-once consumption — two concurrent calls
+  // with the same quote_token result in one success and one NOT_FOUND.
+  // On success, writes a record to kova_fx_db.fx_conversions.
+  //
+  // Error codes:
+  //   OK (0)                  Quote consumed and conversion recorded.
+  //   NOT_FOUND (5)           quote_token does not exist (expired or already consumed).
+  //   INVALID_ARGUMENT (3)    payment_id is empty.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected error (MySQL write after Redis DEL failed —
+  //                           pages on-call; the quote is consumed regardless).
+  rpc ConsumeQuote(ConsumeQuoteRequest) returns (ConsumeQuoteResponse);
+}
+
+// ── GetFxQuote ────────────────────────────────────────────────────────────────
+
+message GetFxQuoteRequest {
+  // ISO 4217 source currency. One of: "NGN", "GBP", "USD", "KES".
+  string from_currency = 1;
+
+  // ISO 4217 target currency. One of: "NGN", "GBP", "USD", "KES".
+  string to_currency = 2;
+
+  // Amount to convert as a decimal string mapping to MySQL DECIMAL(19,4).
+  // Must be strictly positive. Example: "500.0000".
+  // Never use double or float for this field.
+  string from_amount = 3;
+}
+
+message GetFxQuoteResponse {
+  // Opaque token identifying this locked quote in Redis. UUIDv7 string.
+  // Pass to ConsumeQuote. Valid for exactly 30 seconds.
+  string quote_token = 1;
+
+  // Source amount (echoed from request for confirmation).
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  string from_amount = 2;
+
+  // Converted amount after applying the exchange rate and spread.
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string to_amount = 3;
+
+  // Exchange rate applied (mid-market rate, before spread).
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string rate = 4;
+
+  // Spread percentage applied. Decimal string. Example: "0.5000" = 0.5%.
+  // Never use double or float for this field.
+  string spread_pct = 5;
+
+  // Whether triangular conversion was used (e.g. KES→USD→GBP).
+  bool triangulated = 6;
+
+  // UTC timestamp when this quote expires. Exactly 30 seconds from issuance.
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+// ── ConsumeQuote ──────────────────────────────────────────────────────────────
+
+message ConsumeQuoteRequest {
+  // Quote token from GetFxQuoteResponse.quote_token.
+  string quote_token = 1;
+
+  // UUID of the payment consuming this quote. Stored in kova_fx_db.
+  // Stored as 16 raw bytes (BINARY(16) in MySQL, UUIDv7 byte order).
+  bytes payment_id = 2;
+}
+
+message ConsumeQuoteResponse {
+  // UUID of the fx_conversions row written to kova_fx_db.
+  // Stored as 16 raw bytes.
+  bytes conversion_id = 1;
+
+  // Source amount. Decimal string mapping to MySQL DECIMAL(19,4).
+  string from_amount = 2;
+
+  // Converted amount. Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string to_amount = 3;
+
+  // Rate used (locked at quote time). Decimal string.
+  // Never use double or float for this field.
+  string rate = 4;
+
+  google.protobuf.Timestamp consumed_at = 5;
+}

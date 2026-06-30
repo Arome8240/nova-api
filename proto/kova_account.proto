@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package kova.account;
+
+option java_multiple_files = true;
+option java_package = "com.kova.grpc.account";
+
+// KovaAccount — account status and pending payment queries.
+//
+// Called by kova-payments (to validate accounts before processing),
+// kova-cards (to validate accounts before card issuance), and
+// kova-reconciliation (indirectly via kova-payments). Callers must present a
+// valid KOVA-internal JWT in the Authorization metadata header.
+service KovaAccount {
+  // GetAccountStatus returns the current status and metadata of an account.
+  // Used by kova-payments and kova-cards to gate operations on account state.
+  //
+  // Error codes:
+  //   OK (0)                  Account found and status returned.
+  //   NOT_FOUND (5)           No account with the given account_id exists.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
+
+  // GetPendingPayments returns the count of payments in a non-terminal state
+  // for a given account. Used by kova-account itself during account closure
+  // to ensure no in-flight payments remain.
+  //
+  // Error codes:
+  //   OK (0)                  Count returned (zero if none).
+  //   NOT_FOUND (5)           No account with the given account_id exists.
+  //   UNAUTHENTICATED (16)    Missing or invalid internal JWT.
+  //   INTERNAL (13)           Unexpected database error.
+  rpc GetPendingPayments(GetPendingPaymentsRequest) returns (GetPendingPaymentsResponse);
+}
+
+// ── GetAccountStatus ─────────────────────────────────────────────────────────
+
+message GetAccountStatusRequest {
+  // UUID stored as 16 raw bytes (BINARY(16) in MySQL, UUIDv7 byte order).
+  bytes account_id = 1;
+}
+
+message GetAccountStatusResponse {
+  // UUID stored as 16 raw bytes.
+  bytes account_id = 1;
+
+  // UUID stored as 16 raw bytes.
+  bytes user_id = 2;
+
+  // One of: "Active", "Frozen", "Closed", "PendingKYC".
+  // Matches the MySQL ENUM values in kova_account_db.accounts.status exactly.
+  string status = 3;
+
+  // ISO 4217 currency code. One of: "NGN", "GBP", "USD", "KES".
+  string currency = 4;
+
+  // Human-readable account number (format: KOVA + 10 digits).
+  string account_number = 5;
+}
+
+// ── GetPendingPayments ───────────────────────────────────────────────────────
+
+message GetPendingPaymentsRequest {
+  // UUID stored as 16 raw bytes.
+  bytes account_id = 1;
+}
+
+message GetPendingPaymentsResponse {
+  // Total number of payments in a non-terminal status
+  // (Initiated, Validating, FraudCheck, FxConversion, SettlementSubmitted).
+  int32 pending_count = 1;
+
+  // Brief summaries of each pending payment. Callers should check
+  // pending_count > 0 rather than iterating this list for the closure gate.
+  repeated PendingPaymentSummary payments = 2;
+}
+
+message PendingPaymentSummary {
+  // UUID stored as 16 raw bytes.
+  bytes payment_id = 1;
+
+  // Current status string.
+  string status = 2;
+
+  // Decimal string mapping to MySQL DECIMAL(19,4).
+  // Never use double or float for this field.
+  string amount = 3;
+
+  // ISO 4217 currency code.
+  string currency = 4;
+}
