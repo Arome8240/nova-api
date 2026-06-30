@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/kova-types",
+    "crates/kova-kafka",
+    "services/kova-gateway",
     "services/kova-auth",
     "services/kova-account",
     "services/kova-ledger",
@@ -18,6 +20,7 @@ members = [
 # Workspace-level dependency versions — all service crates inherit via { workspace = true }
 [workspace.dependencies]
 kova-types = { path = "crates/kova-types" }
+kova-kafka = { path = "crates/kova-kafka" }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
@@ -48,6 +51,17 @@ chrono = { version = "0.4", features = ["serde"] }
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# HTTP
+axum = { version = "0.8", features = ["macros"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
+
+# Redis
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# JWT
+jsonwebtoken = "10"
 
 # Logging / tracing
 tracing = "0.1"

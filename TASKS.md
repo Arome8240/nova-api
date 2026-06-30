@@ -491,7 +491,7 @@
   - `cargo clippy` passes with zero warnings
 - **Crates/tools:** `rdkafka`, `serde_json`, `tokio`, `futures`, `testcontainers`
 - **Notes:** Never publish Kafka messages directly inside a MySQL transaction. All services must use the outbox pattern (write to `payment_outbox` in the same transaction, then poll and publish). `KovaKafkaProducer` is used only by the outbox worker, not by request handlers.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 

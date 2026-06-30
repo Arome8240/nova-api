@@ -1,0 +1,51 @@
+[package]
+name = "kova-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kova-gateway"
+path = "src/main.rs"
+
+[dependencies]
+kova-types = { workspace = true }
+
+# HTTP
+axum = { version = "0.8", features = ["macros"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
+hyper = { version = "1" }
+http = "1"
+
+# Async
+tokio = { workspace = true }
+futures = "0.3"
+
+# Auth
+jsonwebtoken = "10"
+
+# Redis (for rate limiting)
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# Serialisation / errors
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# IDs
+uuid = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+bytes = "1"

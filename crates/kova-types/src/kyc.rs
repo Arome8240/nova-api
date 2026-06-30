@@ -76,7 +76,7 @@ impl TryFrom<&str> for KycStatus {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        Self::from_str(s).map_err(|e| e)
+        Self::from_str(s)
     }
 }
 
@@ -102,7 +102,7 @@ impl TryFrom<&str> for KycRiskLevel {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        Self::from_str(s).map_err(|e| e)
+        Self::from_str(s)
     }
 }
 

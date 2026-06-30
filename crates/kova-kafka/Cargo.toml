@@ -1,0 +1,21 @@
+[package]
+name = "kova-kafka"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kova-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+rdkafka = { version = "0.39", features = ["tokio"] }
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true }
+rust_decimal_macros = "1"
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["kafka"] }

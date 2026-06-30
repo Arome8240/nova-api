@@ -110,7 +110,6 @@ impl KovaError {
     }
 
     /// Convenience constructors.
-
     pub fn not_found(entity: &'static str, id: impl std::fmt::Display) -> Self {
         Self::NotFound {
             entity,
