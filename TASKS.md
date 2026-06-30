@@ -510,7 +510,7 @@
   - Router applies all middleware layers defined in TASK-030 through TASK-033
 - **Crates/tools:** `axum`, `tower`, `tokio`
 - **Notes:** All path parameters must be parsed into typed ID newtypes (from TASK-007) at the handler boundary. Any non-UUID path parameter must fail with 400 before reaching the handler body.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -527,7 +527,7 @@
   - Unit tests cover: valid token, expired token, wrong algorithm (HS256), missing header, malformed Bearer format
 - **Crates/tools:** `jsonwebtoken`, `axum`, `tower`, `serde`
 - **Notes:** The public key must be loaded once at startup and cached — never re-read per request. Key rotation requires a rolling deployment with a short overlap window where both old and new keys are accepted (implement via a key ID `kid` claim matching a key set).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -544,7 +544,7 @@
   - Redis key TTL is set to window duration + 1 second to prevent stale key accumulation
 - **Crates/tools:** `redis`, `axum`, `tower`, `tokio`
 - **Notes:** OTP endpoints must use IP-based limiting (not user_id) because the user_id may not be authenticated at that point. Use `X-Forwarded-For` header carefully — trust only if the gateway is behind a known proxy (configure allowed proxy IPs in env).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -561,7 +561,7 @@
   - `tracing::instrument` is applied to all handler functions (not just middleware)
 - **Crates/tools:** `tracing`, `tracing-opentelemetry`, `opentelemetry`, `opentelemetry-otlp`, `axum`, `tower`
 - **Notes:** The `kova_service` field in every log line enables log aggregation across all 11 services in a single query. Set it at service startup via `tracing::Span::current().record("kova_service", service_name)`.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -578,7 +578,7 @@
   - Unit tests simulate failure sequences and verify state transitions
 - **Crates/tools:** `tower`, `axum`, `tokio`, `tracing`
 - **Notes:** Circuit breaker state is in-memory per gateway instance — it is not shared across Kubernetes replicas. This is acceptable; each replica will independently discover failures. For coordinated circuit breaking across replicas, Redis state would be required (out of scope for initial implementation).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
