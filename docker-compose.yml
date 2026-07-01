@@ -1,0 +1,167 @@
+version: "3.9"
+
+# ── Shared networking ─────────────────────────────────────────────────────────
+networks:
+  kova:
+    driver: bridge
+
+# ── Reusable fragments ────────────────────────────────────────────────────────
+x-restart: &restart
+  restart: unless-stopped
+
+x-build-defaults: &build-defaults
+  context: .        # repo root — required for the Cargo workspace
+  args:
+    RUST_LOG: info
+
+# ── Services ──────────────────────────────────────────────────────────────────
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  mysql:
+    <<: *restart
+    image: mysql:8.0
+    networks: [kova]
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: kova_root
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pkova_root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    <<: *restart
+    image: redis:7-alpine
+    networks: [kova]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Application services ─────────────────────────────────────────────────────
+
+  kova-auth:
+    <<: *restart
+    build:
+      <<: *build-defaults
+      dockerfile: services/kova-auth/Dockerfile
+    networks: [kova]
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: mysql://kova_auth:kova_auth_dev@mysql/kova_auth_db
+      REDIS_URL: redis://redis:6379
+      BIND_ADDR: 0.0.0.0:3001
+      RUST_LOG: info
+      # Set JWT_PRIVATE_KEY and JWT_PUBLIC_KEY via a .env file (see .env.example)
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/v1/kova/auth/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  kova-account:
+    <<: *restart
+    build:
+      <<: *build-defaults
+      dockerfile: services/kova-account/Dockerfile
+    networks: [kova]
+    ports:
+      - "3002:3002"
+    environment:
+      DATABASE_URL: mysql://kova_account:kova_account_dev@mysql/kova_account_db
+      REDIS_URL: redis://redis:6379
+      BIND_ADDR: 0.0.0.0:3002
+      RUST_LOG: info
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3002/api/v1/kova/account/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  kova-ledger:
+    <<: *restart
+    build:
+      <<: *build-defaults
+      dockerfile: services/kova-ledger/Dockerfile
+    networks: [kova]
+    ports:
+      - "50051:50051"
+    environment:
+      DATABASE_URL: mysql://kova_ledger:kova_ledger_dev@mysql/kova_ledger_db
+      BIND_ADDR: "[::]:50051"
+      RUST_LOG: info
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      # gRPC health: use grpc_health_probe if available, else check port open
+      test: ["CMD-SHELL", "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/localhost/50051' && echo ok || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  kova-gateway:
+    <<: *restart
+    build:
+      <<: *build-defaults
+      dockerfile: services/kova-gateway/Dockerfile
+    networks: [kova]
+    ports:
+      - "8080:8080"
+    environment:
+      KOVA_GATEWAY_ADDR: 0.0.0.0:8080
+      REDIS_URL: redis://redis:6379
+      RUST_LOG: info
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      # Internal service URLs — use Docker service names as hostnames
+      AUTH_SERVICE_URL: http://kova-auth:3001
+      ACCOUNT_SERVICE_URL: http://kova-account:3002
+      LEDGER_GRPC_URL: http://kova-ledger:50051
+    depends_on:
+      kova-auth:
+        condition: service_healthy
+      kova-account:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/kova/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+# ── Named volumes ─────────────────────────────────────────────────────────────
+volumes:
+  mysql_data:
+  redis_data:

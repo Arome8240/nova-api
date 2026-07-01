@@ -61,6 +61,11 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(not(feature = "kafka"))]
     let publisher: Arc<dyn kova_ledger::outbox::OutboxPublisher> = Arc::new(NoOpPublisher);
 
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .context("failed to run database migrations")?;
+
     // ── Spawn background tasks ────────────────────────────────────────────────
     let outbox_pool = pool.clone();
     tokio::spawn(run_outbox_worker(outbox_pool, publisher));

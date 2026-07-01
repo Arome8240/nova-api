@@ -1,0 +1,123 @@
+# Render Blueprint — KOVA Banking API
+# Deploy with: https://dashboard.render.com/select-repo → "Connect Blueprint"
+#
+# Before deploying:
+#   1. Set the secret environment variables listed below in the Render dashboard
+#      (the ones marked sync: false).
+#   2. Provision an external MySQL database (Render does not offer managed MySQL).
+#      PlanetScale free tier is recommended: https://planetscale.com
+#      Create three databases: kova_auth_db, kova_account_db, kova_ledger_db.
+#   3. Generate an RSA-2048 keypair and set JWT_PRIVATE_KEY / JWT_PUBLIC_KEY.
+#
+# Build note: the first Rust build takes 30–45 minutes due to dependency
+# compilation. Subsequent deploys use Docker layer caching and finish in ~5 min
+# (source-only changes) or ~15 min (Cargo.toml changes).
+
+version: "1"
+
+services:
+
+  # ── Redis (shared by auth + account + gateway) ──────────────────────────────
+  - type: redis
+    name: kova-redis
+    plan: starter
+    # Accessible internally at: redis://kova-redis:6379
+    ipAllowList: []   # private — no public access
+
+  # ── kova-auth (private HTTP service) ────────────────────────────────────────
+  - type: pserv
+    name: kova-auth
+    env: docker
+    plan: starter
+    dockerfilePath: services/kova-auth/Dockerfile
+    dockerContext: .
+    # Migrations run automatically at startup via sqlx::migrate!()
+    envVars:
+      - key: BIND_ADDR
+        value: 0.0.0.0:3001
+      - key: RUST_LOG
+        value: info
+      - key: DATABASE_URL
+        # PlanetScale connection string for kova_auth_db
+        # Format: mysql://user:pass@host/kova_auth_db?ssl-mode=require
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kova-redis
+          property: connectionString
+      - key: JWT_PRIVATE_KEY
+        sync: false   # paste RSA-2048 private key PEM in dashboard
+      - key: JWT_PUBLIC_KEY
+        sync: false   # paste RSA-2048 public key PEM in dashboard
+
+  # ── kova-account (private HTTP service) ─────────────────────────────────────
+  - type: pserv
+    name: kova-account
+    env: docker
+    plan: starter
+    dockerfilePath: services/kova-account/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: BIND_ADDR
+        value: 0.0.0.0:3002
+      - key: RUST_LOG
+        value: info
+      - key: DATABASE_URL
+        # PlanetScale connection string for kova_account_db
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kova-redis
+          property: connectionString
+      - key: JWT_PUBLIC_KEY
+        sync: false
+
+  # ── kova-ledger (private gRPC service) ──────────────────────────────────────
+  # SECURITY: this service must NEVER be exposed publicly (ClusterIP only).
+  - type: pserv
+    name: kova-ledger
+    env: docker
+    plan: starter
+    dockerfilePath: services/kova-ledger/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: BIND_ADDR
+        value: "[::]:50051"
+      - key: RUST_LOG
+        value: info
+      - key: DATABASE_URL
+        # PlanetScale connection string for kova_ledger_db
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+
+  # ── kova-gateway (public web service) ───────────────────────────────────────
+  - type: web
+    name: kova-gateway
+    env: docker
+    plan: starter
+    dockerfilePath: services/kova-gateway/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/kova/health
+    envVars:
+      - key: KOVA_GATEWAY_ADDR
+        value: 0.0.0.0:8080
+      - key: RUST_LOG
+        value: info
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kova-redis
+          property: connectionString
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      # Internal service URLs — Render private services are reachable at
+      # http://{service-name}:{port} within the same region.
+      - key: AUTH_SERVICE_URL
+        value: http://kova-auth:3001
+      - key: ACCOUNT_SERVICE_URL
+        value: http://kova-account:3002
+      - key: LEDGER_GRPC_URL
+        value: http://kova-ledger:50051

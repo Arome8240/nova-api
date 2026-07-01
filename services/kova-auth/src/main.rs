@@ -27,6 +27,11 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("failed to connect to MySQL")?;
 
+    sqlx::migrate!("./migrations")
+        .run(&db)
+        .await
+        .context("failed to run database migrations")?;
+
     let redis_client = redis::Client::open(redis_url.as_str())
         .context("failed to parse REDIS_URL")?;
     let redis = redis::aio::ConnectionManager::new(redis_client)

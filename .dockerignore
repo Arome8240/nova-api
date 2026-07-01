@@ -1,0 +1,25 @@
+# Build artifacts — largest source of cache-busting noise
+target/
+
+# Git history not needed inside the image
+.git/
+.github/
+
+# Local dev files
+.env
+.env.*
+*.env
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docs
+docs/
+*.md
+
+# Test key files should not leak into production images
+**/test_keys/
+**/tests/*.pem
