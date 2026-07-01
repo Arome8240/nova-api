@@ -39,7 +39,7 @@ sqlx = { version = "0.8", features = [
 uuid = { version = "1", features = ["v7", "serde"] }
 
 # Money
-rust_decimal = { version = "1", features = ["serde-str"] }
+rust_decimal = { version = "1", features = ["serde-str", "macros"] }
 
 # Serialisation
 serde = { version = "1", features = ["derive"] }
@@ -83,3 +83,11 @@ bytes           = "1"
 
 # Async trait support
 async-trait = "0.1"
+
+# Encoding
+base64 = "0.22"
+
+# gRPC
+tonic       = { version = "0.12", features = ["transport"] }
+prost       = "0.13"
+prost-types = "0.13"

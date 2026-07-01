@@ -791,7 +791,7 @@
   - Integration test: create account, verify row in `kova_account_db`, verify ledger entry created
 - **Crates/tools:** `axum`, `sqlx`, `tonic`, `tracing`, `rdkafka`
 - **Notes:** If kova-ledger is unavailable (circuit breaker open), the account creation must fail and the MySQL row must not be committed. Use a distributed saga or compensating transaction: insert account row, call ledger, rollback account row if ledger fails.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -808,7 +808,7 @@
   - Table-driven tests cover all valid and invalid transitions
 - **Crates/tools:** `axum`, `sqlx`, `rdkafka`, `tracing`
 - **Notes:** The Kafka consumer for `kova.kyc.approved` must be idempotent — if the same event is consumed twice (at-least-once delivery), the second processing must be a no-op (check current status before applying transition).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -826,7 +826,7 @@
   - Circuit breaker from TASK-033 wraps the gRPC call
 - **Crates/tools:** `axum`, `tonic`, `redis`, `tracing`
 - **Notes:** The 5-second cache TTL is a deliberate trade-off between consistency and latency. For the card authorization hot path, kova-cards maintains its own Redis balance cache updated on every ledger event (see TASK-068).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -844,7 +844,7 @@
   - Integration test: insert 25 entries, paginate in pages of 10, verify all 25 are returned exactly once
 - **Crates/tools:** `axum`, `tonic`, `base64`, `tracing`
 - **Notes:** OFFSET pagination on large tables causes full table scans in MySQL. Keyset pagination via `WHERE (created_at, id) < (cursor_ts, cursor_id)` uses the compound index and is O(log n) regardless of page depth.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -861,7 +861,7 @@
   - Response shape matches OpenAPI schema from TASK-035
 - **Crates/tools:** `axum`, `sqlx`, `tracing`
 - **Notes:** The supported currency list is intentionally small for the initial release. Adding a new currency requires both a migration (add to `supported_currencies`) and a code change (add to the `Currency` enum in TASK-008).
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -879,7 +879,7 @@
   - Closure of an already-closed account returns 409
 - **Crates/tools:** `axum`, `sqlx`, `tonic`, `tracing`
 - **Notes:** Account closure is irreversible. Once `status = 'Closed'`, no transition back to `Active` is permitted by the state machine. Add an explicit comment to the transition table in TASK-046 marking this.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
