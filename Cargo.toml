@@ -66,3 +66,20 @@ jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 # Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Crypto
+argon2     = "0.5"
+bcrypt     = "0.15"
+ring       = "0.17"
+hex        = "0.4"
+
+# Phone validation
+phonenumber = "0.3"
+
+# HTTP body utilities
+http            = "1"
+http-body-util  = "0.1"
+bytes           = "1"
+
+# Async trait support
+async-trait = "0.1"
