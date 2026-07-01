@@ -27,7 +27,7 @@ services:
   # ── kova-auth (private HTTP service) ────────────────────────────────────────
   - type: pserv
     name: kova-auth
-    env: docker
+    runtime: docker
     plan: starter
     dockerfilePath: services/kova-auth/Dockerfile
     dockerContext: .
@@ -54,7 +54,7 @@ services:
   # ── kova-account (private HTTP service) ─────────────────────────────────────
   - type: pserv
     name: kova-account
-    env: docker
+    runtime: docker
     plan: starter
     dockerfilePath: services/kova-account/Dockerfile
     dockerContext: .
@@ -78,7 +78,7 @@ services:
   # SECURITY: this service must NEVER be exposed publicly (ClusterIP only).
   - type: pserv
     name: kova-ledger
-    env: docker
+    runtime: docker
     plan: starter
     dockerfilePath: services/kova-ledger/Dockerfile
     dockerContext: .
@@ -94,11 +94,12 @@ services:
         sync: false
 
   # ── kova-gateway (public web service) ───────────────────────────────────────
+  # Uses the root Dockerfile so this service also works when deployed manually
+  # (without going through the Blueprint flow).
   - type: web
     name: kova-gateway
-    env: docker
+    runtime: docker
     plan: starter
-    dockerfilePath: services/kova-gateway/Dockerfile
     dockerContext: .
     healthCheckPath: /api/v1/kova/health
     envVars:
