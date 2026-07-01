@@ -10,13 +10,12 @@ x-restart: &restart
   restart: unless-stopped
 
 x-build-defaults: &build-defaults
-  context: .        # repo root — required for the Cargo workspace
+  context: . # repo root — required for the Cargo workspace
   args:
     RUST_LOG: info
 
 # ── Services ──────────────────────────────────────────────────────────────────
 services:
-
   # ── Infrastructure ──────────────────────────────────────────────────────────
 
   mysql:
@@ -32,7 +31,17 @@ services:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pkova_root"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-pkova_root",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -63,7 +72,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: mysql://kova_auth:kova_auth_dev@mysql/kova_auth_db
+      DATABASE_URL: mysql://kova_auth_centerbowl:7971738f3d38ed25b725edec72996e009accd1e0@in3y1o.h.filess.io:3306/kova_auth_centerbowl
       REDIS_URL: redis://redis:6379
       BIND_ADDR: 0.0.0.0:3001
       RUST_LOG: info
@@ -76,7 +85,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/v1/kova/auth/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:3001/api/v1/kova/auth/health || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -91,7 +104,7 @@ services:
     ports:
       - "3002:3002"
     environment:
-      DATABASE_URL: mysql://kova_account:kova_account_dev@mysql/kova_account_db
+      DATABASE_URL: mysql://kova_account_prepareup:b740ae3cdcc976b62b7a9359c75f4198cf8b6d83@oqo4fh.h.filess.io:3306/kova_account_prepareup
       REDIS_URL: redis://redis:6379
       BIND_ADDR: 0.0.0.0:3002
       RUST_LOG: info
@@ -102,7 +115,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3002/api/v1/kova/account/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:3002/api/v1/kova/account/health || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -126,7 +143,11 @@ services:
         condition: service_healthy
     healthcheck:
       # gRPC health: use grpc_health_probe if available, else check port open
-      test: ["CMD-SHELL", "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/localhost/50051' && echo ok || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/localhost/50051' && echo ok || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -155,7 +176,11 @@ services:
       kova-account:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v1/kova/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8080/api/v1/kova/health || exit 1",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
