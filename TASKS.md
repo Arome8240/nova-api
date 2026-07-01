@@ -649,7 +649,7 @@
   - Unit test covers: valid registration, duplicate phone, invalid phone format
 - **Crates/tools:** `axum`, `sqlx`, `phonenumber`, `tracing`, `uuid`
 - **Notes:** Africa-first design means Nigerian (+234), Kenyan (+254), Ghanaian (+233), and South African (+27) numbers are the primary formats. Use the `phonenumber` crate for robust E.164 validation rather than a regex.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -667,7 +667,7 @@
   - Unit tests verify that two hashes of the same input differ (salt is random)
 - **Crates/tools:** `argon2`, `bcrypt`, `ring`, `sqlx`
 - **Notes:** PIN is 4–6 digits. Never log or include PINs in error messages or traces. The `tracing::instrument` macro must be applied with `skip(pin)` and `skip(hash)` to prevent PIN values appearing in span fields.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -685,7 +685,7 @@
   - `tracing::instrument(skip(otp_code))` on verify handler
 - **Crates/tools:** `axum`, `sqlx`, `redis`, `jsonwebtoken`, `tracing`
 - **Notes:** The SMS mock provider must log the OTP to stdout in development mode only (guarded by `cfg!(debug_assertions)`). In production, the OTP must never appear in logs.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -703,7 +703,7 @@
   - RS256 private key is loaded from AWS Secrets Manager env var, not the filesystem
 - **Crates/tools:** `jsonwebtoken`, `sqlx`, `ring`, `uuid`, `chrono`
 - **Notes:** Refresh token reuse detection is a critical security control. When a rotated (already-used) refresh token is presented, the entire session family must be invalidated — not just that token. This prevents an attacker from silently using a stolen refresh token after legitimate rotation.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -720,7 +720,7 @@
   - Integration test uses a real Redis instance (testcontainers-rs)
 - **Crates/tools:** `redis`, `axum`, `ring`, `tracing`
 - **Notes:** The biometric challenge-response pattern allows React Native to use Face ID/Touch ID without the server knowing anything about the biometric data. The server only validates that the correct challenge was returned — the OS guarantees the biometric check happened.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -737,7 +737,7 @@
   - Unit test: revoke session, then verify subsequent requests with that token return 401
 - **Crates/tools:** `axum`, `sqlx`, `redis`, `tracing`
 - **Notes:** Session revocation via database check on every request is a performance trade-off. The 60-second Redis cache mitigates this. For high-security operations (password reset, suspicious activity), bypass the cache and check MySQL directly.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -754,7 +754,7 @@
   - Argon2id parameters match TASK-038 exactly
 - **Crates/tools:** `axum`, `sqlx`, `argon2`, `tracing`
 - **Notes:** PIN is the primary authentication factor in the Africa-first model — many users will not have reliable email access. The OTP re-verification requirement for PIN change is a mandatory security control.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 
@@ -771,7 +771,7 @@
   - `cargo clippy -- -D warnings` passes
 - **Crates/tools:** `axum`, `sqlx`, `deadpool-redis`, `tokio`, `tracing-subscriber`, `opentelemetry-otlp`
 - **Notes:** Panicking at startup on missing env vars is intentional — it surfaces misconfiguration immediately in deployment rather than failing on the first request. Use `std::env::var(...).expect("DATABASE_URL must be set")` in `main()` only.
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ---
 

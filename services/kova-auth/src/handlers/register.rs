@@ -6,7 +6,6 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{error::AuthError, state::AppState};

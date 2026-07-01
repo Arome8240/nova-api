@@ -10,13 +10,14 @@ use axum::{
     extract::FromRequestParts,
     http::{request::Parts, StatusCode},
 };
-use jsonwebtoken::{Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, Validation};
 use serde_json::json;
 
 use crate::{state::AppState, tokens::KovaClaims};
 
 /// Axum extractor that validates the Bearer JWT and returns the decoded claims.
 /// Used by endpoints that require an authenticated session.
+#[derive(Debug)]
 pub struct AuthClaims(pub KovaClaims);
 
 impl FromRequestParts<AppState> for AuthClaims {
