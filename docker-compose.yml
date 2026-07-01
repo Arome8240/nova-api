@@ -134,7 +134,7 @@ services:
     ports:
       - "50051:50051"
     environment:
-      DATABASE_URL: mysql://kova_ledger:kova_ledger_dev@mysql/kova_ledger_db
+      DATABASE_URL: mysql://if0_42296162:ro4oiPUJuC@sql309.infinityfree.com:3306/if0_42296162_kova_ledger
       BIND_ADDR: "[::]:50051"
       RUST_LOG: info
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
